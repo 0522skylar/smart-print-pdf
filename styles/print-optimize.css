@@ -1,0 +1,164 @@
+/* ===========================================
+   print-optimize.css —— 打印优化样式
+   只在 @media print 下生效，不影响屏幕显示
+   =========================================== */
+
+@media print {
+  /* ========= 1. 隐藏常见非内容元素 ========= */
+  header,
+  nav,
+  aside,
+  footer,
+  .header, .Header,
+  .nav, .navbar, .Nav,
+  .sidebar, .Sidebar,
+  .footer, .Footer,
+  .ad, .ads, .advertisement, .adsbygoogle,
+  .cookie-banner, .cookie-notice, .cookies,
+  .popup, .modal, .overlay, .toast,
+  .share, .share-bar, .social, .social-share,
+  .related, .recommended, .recommendations,
+  .comments, .comment-list, #comments, #disqus_thread,
+  .breadcrumb, .breadcrumbs,
+  .toolbar, .floating, .fab,
+  [class*="float"], [class*="sticky"],
+  [class*="banner"]:not([class*="content"]):not([class*="article"]),
+  [class*="header"]:not([class*="content"]):not([class*="article"]),
+  [class*="sidebar"],
+  [class*="advertisement"],
+  [role="navigation"],
+  [role="banner"],
+  [role="complementary"],
+  [role="contentinfo"],
+  [aria-label*="导航"],
+  [aria-label*="侧边栏"],
+  iframe[src*="ads"],
+  iframe[src*="doubleclick"],
+  iframe[src*="googlesyndication"] {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  /* ========= 2. 强制清除 fixed/sticky 定位 ========= */
+  /* 这是解决"头部一直占满首页"的关键 */
+  *,
+  *::before,
+  *::after {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    z-index: auto !important;
+    transform: none !important;
+  }
+
+  /* ========= 3. 重置主体容器 ========= */
+  html, body {
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  /* ========= 4. 解除常见容器的高度/溢出限制 ========= */
+  main, article, section,
+  .content, .Content,
+  .container, .Container,
+  .main, .Main,
+  .post, .Post,
+  .article, .Article,
+  #content, #main, #app, #root,
+  [class*="content-wrapper"],
+  [class*="main-content"],
+  [class*="article-body"],
+  [class*="post-content"] {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    width: auto !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 8px !important;
+    float: none !important;
+    background: transparent !important;
+  }
+
+  /* ========= 5. 防止内容被强行切分 ========= */
+  p, li, blockquote, pre, code {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    orphans: 3;
+    widows: 3;
+  }
+
+  table, figure, img, video, .code-block, pre {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid;
+    break-after: avoid;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* ========= 6. 媒体自适应 ========= */
+  img, video, iframe, svg {
+    max-width: 100% !important;
+    height: auto !important;
+    object-fit: contain !important;
+  }
+
+  /* ========= 7. 表格优化 ========= */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+  thead { display: table-header-group; }
+  tr, td, th { page-break-inside: avoid; }
+
+  /* ========= 8. 代码块优化 ========= */
+  pre, code {
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    word-break: break-word !important;
+    overflow: visible !important;
+    background: #f8f9fa !important;
+    border: 1px solid #e5e7eb !important;
+  }
+
+  /* ========= 9. 链接显示完整 URL（可选,默认关） ========= */
+  /*
+  a[href]:not([href^="#"])::after {
+    content: " (" attr(href) ")";
+    font-size: 0.85em;
+    color: #666;
+    word-break: break-all;
+  }
+  */
+
+  /* ========= 10. 隐藏插件自身可能添加的覆盖层 ========= */
+  .__smart_print_overlay,
+  .__smart_print_highlight {
+    display: none !important;
+  }
+
+  /* ========= 11. 页边距 ========= */
+  @page {
+    margin: 1.5cm 1.2cm;
+    size: A4;
+  }
+
+  /* ========= 12. 文本颜色规范 ========= */
+  body, p, span, div, li, td, th {
+    color: #111 !important;
+  }
+}

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>智能打印 PDF</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 300px;
+      padding: 16px;
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #fafafa;
+      color: #222;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .header h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #111;
+    }
+    .header .icon { font-size: 20px; }
+
+    .btn {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      width: 100%;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s;
+    }
+    .btn:hover {
+      border-color: #2563eb;
+      background: #eff6ff;
+      transform: translateY(-1px);
+    }
+    .btn:active { transform: translateY(0); }
+    .btn-icon { font-size: 18px; flex-shrink: 0; line-height: 1.2; }
+    .btn-content { flex: 1; }
+    .btn-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #111;
+      margin-bottom: 2px;
+    }
+    .btn-desc {
+      font-size: 11px;
+      color: #6b7280;
+      line-height: 1.4;
+    }
+
+    .btn.primary {
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      border-color: #1d4ed8;
+    }
+    .btn.primary .btn-title { color: white; }
+    .btn.primary .btn-desc { color: rgba(255,255,255,0.85); }
+    .btn.primary:hover {
+      background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+    }
+
+    .footer {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 11px;
+      color: #9ca3af;
+      text-align: center;
+    }
+
+    #status {
+      margin-top: 8px;
+      padding: 8px 10px;
+      font-size: 12px;
+      border-radius: 6px;
+      display: none;
+    }
+    #status.show { display: block; }
+    #status.success { background: #d1fae5; color: #065f46; }
+    #status.error { background: #fee2e2; color: #991b1b; }
+    #status.info { background: #dbeafe; color: #1e40af; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="icon">📄</span>
+    <h3>智能打印 PDF</h3>
+  </div>
+
+  <button class="btn primary" id="smartPrint">
+    <span class="btn-icon">🚀</span>
+    <div class="btn-content">
+      <div class="btn-title">智能打印（推荐）</div>
+      <div class="btn-desc">自动隐藏导航栏、广告、侧边栏</div>
+    </div>
+  </button>
+
+  <button class="btn" id="readerPrint">
+    <span class="btn-icon">📖</span>
+    <div class="btn-content">
+      <div class="btn-title">阅读模式打印</div>
+      <div class="btn-desc">只保留正文，适合长文章</div>
+    </div>
+  </button>
+
+  <button class="btn" id="selectArea">
+    <span class="btn-icon">🎯</span>
+    <div class="btn-content">
+      <div class="btn-title">选择区域打印</div>
+      <div class="btn-desc">手动框选要打印的内容（点击元素）</div>
+    </div>
+  </button>
+
+  <button class="btn" id="fullPage">
+    <span class="btn-icon">📋</span>
+    <div class="btn-content">
+      <div class="btn-title">整页截图导出</div>
+      <div class="btn-desc">把整页转成图片再生成 PDF</div>
+    </div>
+  </button>
+
+  <div id="status"></div>
+
+  <div class="footer">v1.0.0 · 解决 Chrome 自带打印缺失问题</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
