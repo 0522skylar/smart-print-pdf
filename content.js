@@ -265,6 +265,9 @@
   // ==================== 截图 + PDF 导出（共用） ====================
   async function captureAndExport(el, isFullPage = false) {
     showLoading('正在生成 PDF...');
+    // 强制让浏览器把 loading 黑框先 paint 出来再开始重活儿
+    // （否则区域截图很快，html2canvas 同步阻塞主线程，黑框来不及绘制就被 hideLoading 移除）
+    await waitForPaint();
     try {
       // 库由 popup.js 通过 chrome.scripting.executeScript 预注入到 ISOLATED world
       // 这里只做兜底校验
@@ -341,11 +344,20 @@
   // ==================== 工具函数 ====================
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+  // 等浏览器至少 paint 一帧，确保 loading 元素真的被绘制出来
+  function waitForPaint() {
+    return new Promise(resolve => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+  }
+
   let loadingEl = null;
   function showLoading(msg) {
     if (loadingEl) loadingEl.remove();
     loadingEl = document.createElement('div');
     loadingEl.className = '__smart_print_overlay';
+    // 让 html2canvas 在克隆 DOM 时跳过这个 loading 元素，避免被截进 PDF
+    loadingEl.setAttribute('data-html2canvas-ignore', 'true');
     loadingEl.style.cssText = `
       position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
       z-index: 2147483647; background: rgba(0,0,0,0.85); color: white;
@@ -361,6 +373,7 @@
   function toast(msg, duration = 2000) {
     const el = document.createElement('div');
     el.className = '__smart_print_overlay';
+    el.setAttribute('data-html2canvas-ignore', 'true');
     el.style.cssText = `
       position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
       z-index: 2147483647; background: #111; color: white;
