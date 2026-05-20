@@ -71,6 +71,18 @@
       background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
     }
 
+    .btn.btn-secondary {
+      margin-top: 6px;
+      background: #fef3c7;
+      border-color: #fbbf24;
+    }
+    .btn.btn-secondary:hover {
+      background: #fde68a;
+      border-color: #f59e0b;
+    }
+    .btn.btn-secondary .btn-title { color: #92400e; }
+    .btn.btn-secondary .btn-desc { color: #b45309; }
+
     .footer {
       margin-top: 12px;
       padding-top: 10px;
@@ -140,6 +152,14 @@
     <div class="btn-content">
       <div class="btn-title">整页截图导出</div>
       <div class="btn-desc">把整页转成图片再生成 PDF</div>
+    </div>
+  </button>
+
+  <button class="btn btn-secondary" id="manageRules">
+    <span class="btn-icon">📌</span>
+    <div class="btn-content">
+      <div class="btn-title">管理本站隐藏规则</div>
+      <div class="btn-desc">自定义打印时隐藏哪些元素（per-domain）</div>
     </div>
   </button>
 

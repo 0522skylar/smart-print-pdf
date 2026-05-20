@@ -23,7 +23,7 @@ async function execOnPage(action) {
       return;
     }
 
-    showStatus('正在打开设置面板...', 'info', 0);
+    showStatus(action === 'manage-rules' ? '正在打开规则管理...' : '正在打开设置面板...', 'info', 0);
 
     // 注入 content script
     await chrome.scripting.executeScript({
@@ -43,8 +43,8 @@ async function execOnPage(action) {
     // 读取用户是否设置了"跳过设置面板"
     const { skipPanel } = await chrome.storage.sync.get('skipPanel');
 
-    // 区域选择不弹面板（交互冲突），其他 3 种模式默认弹面板
-    const showPanel = !skipPanel && action !== 'select-area';
+    // 区域选择不弹面板（交互冲突），管理规则不需要打印设置面板
+    const showPanel = !skipPanel && action !== 'select-area' && action !== 'manage-rules';
 
     // 发消息给 content script
     await chrome.tabs.sendMessage(tab.id, { action, showPanel });
@@ -63,6 +63,7 @@ document.getElementById('smartPrint').addEventListener('click', () => execOnPage
 document.getElementById('readerPrint').addEventListener('click', () => execOnPage('reader-print'));
 document.getElementById('selectArea').addEventListener('click', () => execOnPage('select-area'));
 document.getElementById('fullPage').addEventListener('click', () => execOnPage('full-page'));
+document.getElementById('manageRules').addEventListener('click', () => execOnPage('manage-rules'));
 
 document.getElementById('resetSkip').addEventListener('click', async (e) => {
   e.preventDefault();

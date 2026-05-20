@@ -35,6 +35,12 @@
   });
 
   async function handleAction(msg) {
+    // 独立入口：管理本站隐藏规则
+    if (msg.action === 'manage-rules') {
+      openRulesManager();
+      return;
+    }
+
     const stored = await loadOptions();
     const baseOptions = { ...DEFAULT_OPTIONS, ...stored };
 
@@ -74,6 +80,126 @@
     });
   }
 
+  // ==================== 隐藏规则（per-domain） ====================
+  // 存储结构：{ hideRules: { 'zhihu.com': ['.AppHeader', '#xx'], '*': [...] } }
+  function getCurrentDomain() {
+    return location.hostname || '*';
+  }
+
+  function loadHideRules() {
+    return new Promise(resolve => {
+      try {
+        chrome.storage.sync.get('hideRules', data => resolve((data && data.hideRules) || {}));
+      } catch {
+        resolve({});
+      }
+    });
+  }
+  function saveHideRules(rules) {
+    return new Promise(resolve => {
+      try {
+        chrome.storage.sync.set({ hideRules: rules }, () => resolve());
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  // 取该页面适用的所有选择器（当前域 + 全局）
+  async function getEffectiveSelectors() {
+    const all = await loadHideRules();
+    const domain = getCurrentDomain();
+    const selectors = [
+      ...((all['*'] || [])),
+      ...((all[domain] || [])),
+    ];
+    return [...new Set(selectors.filter(s => typeof s === 'string' && s.trim()))];
+  }
+
+  // 把选择器写入 print 媒介隐藏样式（用于智能/阅读模式）
+  function buildHideRulesCss(selectors) {
+    if (!selectors || !selectors.length) return '';
+    // 注意：用户输入需要校验，逐条 try 防止整段无效
+    const valid = selectors.filter(sel => {
+      try { document.querySelector(sel); return true; } catch { return false; }
+    });
+    if (!valid.length) return '';
+    return `${valid.join(',\n')} { display: none !important; visibility: hidden !important; }`;
+  }
+
+  // 截图模式：临时给匹配元素加内联 hidden，截完恢复
+  function applyHideRulesForCanvas(selectors) {
+    const restored = [];
+    if (!selectors || !selectors.length) return restored;
+    selectors.forEach(sel => {
+      let nodes;
+      try { nodes = document.querySelectorAll(sel); } catch { return; }
+      nodes.forEach(el => {
+        restored.push({ el, original: el.getAttribute('style') });
+        el.style.setProperty('display', 'none', 'important');
+      });
+    });
+    return restored;
+  }
+  function restoreHidden(restored) {
+    restored.forEach(({ el, original }) => {
+      if (original === null) el.removeAttribute('style');
+      else el.setAttribute('style', original);
+    });
+  }
+
+  // 生成元素的最佳 CSS 选择器（用于可视化拾取器）
+  function bestSelectorOf(el) {
+    if (!el || el.nodeType !== 1) return '';
+    if (el.id && /^[A-Za-z][\w-]*$/.test(el.id)) {
+      const sel = `#${el.id}`;
+      if (document.querySelectorAll(sel).length === 1) return sel;
+    }
+    // 1. 单类名足够唯一
+    const classes = (el.className && typeof el.className === 'string')
+      ? el.className.trim().split(/\s+/).filter(c => c && !/^(active|hover|focus|sp-|__)/.test(c))
+      : [];
+    for (const c of classes) {
+      const sel = `.${CSS.escape(c)}`;
+      try {
+        if (document.querySelectorAll(sel).length === 1) return sel;
+      } catch { /* ignore */ }
+    }
+    // 2. 类名组合
+    if (classes.length >= 2) {
+      const combo = '.' + classes.slice(0, 3).map(c => CSS.escape(c)).join('.');
+      try {
+        if (document.querySelectorAll(combo).length === 1) return combo;
+      } catch { /* ignore */ }
+    }
+    // 3. 标签 + 类名
+    const tag = el.tagName.toLowerCase();
+    if (classes.length) {
+      const combo = `${tag}.${CSS.escape(classes[0])}`;
+      try {
+        if (document.querySelectorAll(combo).length === 1) return combo;
+      } catch { /* ignore */ }
+    }
+    // 4. 父级降级（最多向上 3 级）
+    let cur = el, path = [];
+    for (let i = 0; cur && cur.nodeType === 1 && i < 4; i++) {
+      let part = cur.tagName.toLowerCase();
+      const cls = (cur.className && typeof cur.className === 'string')
+        ? cur.className.trim().split(/\s+/).filter(c => c && !/^(active|hover|focus|sp-|__)/.test(c))[0] : '';
+      if (cls) part += '.' + CSS.escape(cls);
+      else if (cur.parentElement) {
+        const idx = Array.from(cur.parentElement.children).indexOf(cur) + 1;
+        part += `:nth-child(${idx})`;
+      }
+      path.unshift(part);
+      try {
+        if (document.querySelectorAll(path.join(' > ')).length === 1) return path.join(' > ');
+      } catch { /* ignore */ }
+      cur = cur.parentElement;
+    }
+    return path.join(' > ') || tag;
+  }
+
   // ==================== 浮动设置面板 ====================
   function openSettingsPanel(action, opts) {
     return new Promise(resolve => {
@@ -90,7 +216,7 @@
 
       const panel = document.createElement('div');
       panel.id = '__smart_print_panel';
-      panel.className = '__smart_print_overlay';
+      panel.className = '__smart_print_overlay __sp-modal';
       panel.setAttribute('data-html2canvas-ignore', 'true');
       panel.innerHTML = `
         <div class="sp-panel-mask"></div>
@@ -161,6 +287,7 @@
           <div class="sp-panel-foot">
             <label class="sp-check sp-skip"><input type="checkbox" data-key="skipPanel" ${opts.skipPanel ? 'checked' : ''}> 下次不再询问</label>
             <div class="sp-actions">
+              <button class="sp-btn sp-btn-rules" type="button" title="管理本站隐藏规则">📌 隐藏规则</button>
               <button class="sp-btn sp-btn-cancel" type="button">取消</button>
               <button class="sp-btn sp-btn-ok" type="button">开始打印</button>
             </div>
@@ -213,6 +340,10 @@
       panel.querySelector('.sp-btn-cancel').addEventListener('click', () => close(null));
       panel.querySelector('.sp-panel-mask').addEventListener('click', () => close(null));
       panel.querySelector('.sp-btn-ok').addEventListener('click', () => close(result));
+      panel.querySelector('.sp-btn-rules').addEventListener('click', () => {
+        close(null);
+        setTimeout(() => openRulesManager(), 50);
+      });
       document.addEventListener('keydown', onKey, true);
 
       // 自动聚焦确定按钮
@@ -232,16 +363,16 @@
     const style = document.createElement('style');
     style.id = '__smart_print_panel_style';
     style.textContent = `
-      #__smart_print_panel {
+      .__sp-modal {
         position: fixed; inset: 0; z-index: 2147483647;
         font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
         color: #111;
       }
-      #__smart_print_panel .sp-panel-mask {
+      .__sp-modal .sp-panel-mask {
         position: absolute; inset: 0; background: rgba(0,0,0,0.35);
         animation: sp-fade 0.15s ease;
       }
-      #__smart_print_panel .sp-panel {
+      .__sp-modal .sp-panel {
         position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
         width: 420px; max-width: calc(100vw - 32px); max-height: calc(100vh - 64px);
         background: #fff; border-radius: 12px; overflow: hidden;
@@ -254,67 +385,67 @@
         from { opacity: 0; transform: translate(-50%, -48%) scale(0.96); }
         to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
       }
-      #__smart_print_panel .sp-panel-head {
+      .__sp-modal .sp-panel-head {
         padding: 14px 18px; border-bottom: 1px solid #eee;
         display: flex; align-items: center; justify-content: space-between;
       }
-      #__smart_print_panel .sp-panel-title { font-size: 15px; font-weight: 600; }
-      #__smart_print_panel .sp-panel-close {
+      .__sp-modal .sp-panel-title { font-size: 15px; font-weight: 600; }
+      .__sp-modal .sp-panel-close {
         width: 28px; height: 28px; border: none; background: transparent;
         font-size: 22px; line-height: 1; color: #888; cursor: pointer; border-radius: 6px;
       }
-      #__smart_print_panel .sp-panel-close:hover { background: #f3f4f6; color: #111; }
-      #__smart_print_panel .sp-panel-body {
+      .__sp-modal .sp-panel-close:hover { background: #f3f4f6; color: #111; }
+      .__sp-modal .sp-panel-body {
         padding: 16px 18px; overflow-y: auto; flex: 1;
       }
-      #__smart_print_panel .sp-row {
+      .__sp-modal .sp-row {
         display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
       }
-      #__smart_print_panel .sp-row > label {
+      .__sp-modal .sp-row > label {
         width: 72px; flex-shrink: 0; font-size: 13px; color: #555;
       }
-      #__smart_print_panel .sp-row-checks { align-items: flex-start; }
-      #__smart_print_panel .sp-row-checks > label { padding-top: 4px; }
-      #__smart_print_panel .sp-seg {
+      .__sp-modal .sp-row-checks { align-items: flex-start; }
+      .__sp-modal .sp-row-checks > label { padding-top: 4px; }
+      .__sp-modal .sp-seg {
         display: inline-flex; flex-wrap: wrap; gap: 4px;
         background: #f3f4f6; padding: 3px; border-radius: 8px;
       }
-      #__smart_print_panel .sp-seg-btn {
+      .__sp-modal .sp-seg-btn {
         border: none; background: transparent; padding: 5px 12px;
         font-size: 12px; color: #444; border-radius: 6px; cursor: pointer;
         transition: all 0.12s;
       }
-      #__smart_print_panel .sp-seg-btn:hover { background: #e5e7eb; }
-      #__smart_print_panel .sp-seg-btn.active {
+      .__sp-modal .sp-seg-btn:hover { background: #e5e7eb; }
+      .__sp-modal .sp-seg-btn.active {
         background: #fff; color: #2563eb; font-weight: 600;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
       }
-      #__smart_print_panel .sp-checks {
+      .__sp-modal .sp-checks {
         display: flex; flex-wrap: wrap; gap: 6px 14px; flex: 1;
       }
-      #__smart_print_panel .sp-check {
+      .__sp-modal .sp-check {
         display: inline-flex; align-items: center; gap: 5px;
         font-size: 13px; color: #333; cursor: pointer; user-select: none;
       }
-      #__smart_print_panel .sp-check input { margin: 0; cursor: pointer; }
-      #__smart_print_panel .sp-panel-foot {
+      .__sp-modal .sp-check input { margin: 0; cursor: pointer; }
+      .__sp-modal .sp-panel-foot {
         padding: 12px 18px; border-top: 1px solid #eee;
         display: flex; align-items: center; justify-content: space-between;
         gap: 12px; background: #fafafa;
       }
-      #__smart_print_panel .sp-skip { font-size: 12px; color: #666; }
-      #__smart_print_panel .sp-actions { display: flex; gap: 8px; }
-      #__smart_print_panel .sp-btn {
+      .__sp-modal .sp-skip { font-size: 12px; color: #666; }
+      .__sp-modal .sp-actions { display: flex; gap: 8px; }
+      .__sp-modal .sp-btn {
         padding: 7px 16px; font-size: 13px; border-radius: 6px;
         border: 1px solid #d1d5db; background: #fff; color: #333;
         cursor: pointer; transition: all 0.12s;
       }
-      #__smart_print_panel .sp-btn:hover { background: #f3f4f6; }
-      #__smart_print_panel .sp-btn-ok {
+      .__sp-modal .sp-btn:hover { background: #f3f4f6; }
+      .__sp-modal .sp-btn-ok {
         background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
         border-color: #1d4ed8; color: #fff;
       }
-      #__smart_print_panel .sp-btn-ok:hover {
+      .__sp-modal .sp-btn-ok:hover {
         background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
       }
     `;
@@ -322,7 +453,7 @@
   }
 
   // ==================== 模式 1: 智能打印 ====================
-  function smartPrint(options) {
+  async function smartPrint(options) {
     const stylesheetURL = chrome.runtime.getURL('styles/print-optimize.css');
 
     // 1. 注入打印样式表
@@ -335,8 +466,9 @@
       document.head.appendChild(link);
     }
 
-    // 2. 注入运行时动态样式（页面方向 / 边距 / 链接URL / 强制亮色）
-    applyRuntimePrintStyle(options);
+    // 2. 注入运行时动态样式（页面方向 / 边距 / 链接URL / 强制亮色 / 自定义隐藏规则）
+    const selectors = await getEffectiveSelectors();
+    applyRuntimePrintStyle(options, selectors);
 
     // 3. JS 兜底：清理 fixed/sticky 元素
     const cleaned = cleanFixedElements();
@@ -356,15 +488,18 @@
     }, 300);
   }
 
-  function applyRuntimePrintStyle(options) {
+  function applyRuntimePrintStyle(options, hideSelectors = []) {
     document.getElementById('__smart_print_runtime_style')?.remove();
     const [w, h] = PAPER_SIZES[options.paperSize] || PAPER_SIZES.a4;
     const sizeMm = options.orientation === 'landscape' ? `${h}mm ${w}mm` : `${w}mm ${h}mm`;
     const marginMm = `${options.margin}mm`;
 
+    const hideCss = buildHideRulesCss(hideSelectors);
+
     const css = `
       @media print {
         @page { size: ${sizeMm}; margin: ${marginMm}; }
+        ${hideCss}
         ${options.forceLight ? `
           html, body, * {
             background: #fff !important;
@@ -404,12 +539,15 @@
   }
 
   // ==================== 模式 2: 阅读模式打印 ====================
-  function readerPrint(options) {
+  async function readerPrint(options) {
     const article = pickArticleNode();
     if (!article) {
       alert('未识别到正文区域，请尝试"智能打印"或"选择区域打印"');
       return;
     }
+
+    // 提前应用隐藏规则到正文克隆体（在源 DOM 不动的前提下）
+    const hideSelectors = await getEffectiveSelectors();
 
     const title = document.title || 'Untitled';
     const win = window.open('', '_blank');
@@ -500,6 +638,11 @@
 
     doc.querySelectorAll('script, .share, .ad, .ads, .related, [class*="share"], [class*="recommend"]')
        .forEach(n => n.remove());
+
+    // 应用用户自定义隐藏规则（在子窗口内）
+    hideSelectors.forEach(sel => {
+      try { doc.querySelectorAll(sel).forEach(n => n.remove()); } catch { /* invalid selector */ }
+    });
 
     const waitImages = () => {
       const imgs = Array.from(doc.images);
@@ -610,6 +753,7 @@
   async function captureAndExport(el, isFullPage, options) {
     showLoading('正在生成 PDF...');
     await waitForPaint();
+    let hiddenRestored = [];
     try {
       if (!window.html2canvas || !window.jspdf) {
         throw new Error('PDF 依赖库未加载，请重新点击按钮再试一次');
@@ -617,6 +761,10 @@
 
       const html2canvas = window.html2canvas;
       const { jsPDF } = window.jspdf;
+
+      // —— 应用自定义隐藏规则（截图前临时 hide，截完恢复） ——
+      const hideSelectors = await getEffectiveSelectors();
+      hiddenRestored = applyHideRulesForCanvas(hideSelectors);
 
       await sleep(150);
 
@@ -709,6 +857,8 @@
       console.error(err);
       hideLoading();
       toast('❌ 生成失败：' + (err.message || err), 4000);
+    } finally {
+      restoreHidden(hiddenRestored);
     }
   }
 
@@ -784,5 +934,336 @@
     el.textContent = msg;
     document.body.appendChild(el);
     setTimeout(() => el.remove(), duration);
+  }
+
+  // ==================== 隐藏规则管理面板 ====================
+  async function openRulesManager() {
+    document.getElementById('__smart_print_rules_panel')?.remove();
+    injectPanelStyles();
+    injectRulesStyles();
+
+    const allRules = await loadHideRules();
+    const domain = getCurrentDomain();
+    // 工作副本
+    const draft = {
+      domain: [...(allRules[domain] || [])],
+      global: [...(allRules['*'] || [])],
+    };
+
+    const panel = document.createElement('div');
+    panel.id = '__smart_print_rules_panel';
+    panel.className = '__smart_print_overlay __sp-modal';
+    panel.setAttribute('data-html2canvas-ignore', 'true');
+    panel.innerHTML = `
+      <div class="sp-panel-mask"></div>
+      <div class="sp-panel sp-rules-panel">
+        <div class="sp-panel-head">
+          <span class="sp-panel-title">📌 隐藏规则管理</span>
+          <button class="sp-panel-close" type="button" title="关闭">×</button>
+        </div>
+
+        <div class="sp-rules-tabs">
+          <button class="sp-tab active" data-tab="domain">本站规则 (${escapeHtml(domain)})</button>
+          <button class="sp-tab" data-tab="global">全局规则（所有网站）</button>
+        </div>
+
+        <div class="sp-panel-body sp-rules-body">
+          <div class="sp-rules-toolbar">
+            <button class="sp-btn sp-btn-pick" type="button">🎯 点选要隐藏的元素</button>
+          </div>
+          <div class="sp-rules-hint">点上面的按钮，然后在页面上点击任意要隐藏的内容（广告、侧栏、横幅等），下次打印会自动跳过它们。</div>
+
+          <ul class="sp-rules-list" id="sp-rules-list"></ul>
+          <div class="sp-rules-empty" id="sp-rules-empty" style="display:none;">暂无规则。点上方按钮选择要隐藏的内容即可。</div>
+        </div>
+
+        <div class="sp-panel-foot">
+          <button class="sp-btn sp-btn-export" type="button" title="导出全部规则到剪贴板">导出</button>
+          <button class="sp-btn sp-btn-import" type="button" title="从剪贴板导入">导入</button>
+          <div class="sp-actions">
+            <button class="sp-btn sp-btn-cancel" type="button">取消</button>
+            <button class="sp-btn sp-btn-ok" type="button">保存</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(panel);
+
+    let activeTab = 'domain';
+    const listEl = panel.querySelector('#sp-rules-list');
+    const emptyEl = panel.querySelector('#sp-rules-empty');
+
+    const currentList = () => activeTab === 'domain' ? draft.domain : draft.global;
+    const setList = (arr) => {
+      if (activeTab === 'domain') draft.domain = arr;
+      else draft.global = arr;
+    };
+
+    function render() {
+      const list = currentList();
+      listEl.innerHTML = '';
+      if (!list.length) {
+        emptyEl.style.display = 'block';
+        return;
+      }
+      emptyEl.style.display = 'none';
+      list.forEach((sel, idx) => {
+        let matchCount = 0;
+        try { matchCount = document.querySelectorAll(sel).length; } catch { matchCount = -1; }
+        const li = document.createElement('li');
+        li.className = 'sp-rule-item';
+        li.innerHTML = `
+          <span class="sp-rule-sel" title="${escapeHtml(sel)}">${escapeHtml(sel)}</span>
+          <span class="sp-rule-count ${matchCount === -1 ? 'invalid' : matchCount === 0 ? 'zero' : ''}">
+            ${matchCount === -1 ? '⚠ 失效' : matchCount === 0 ? '页面已无' : `命中 ${matchCount} 处`}
+          </span>
+          <button class="sp-rule-flash" type="button" title="在页面上定位查看">👁</button>
+          <button class="sp-rule-del" type="button" title="移除此规则">×</button>
+        `;
+        li.querySelector('.sp-rule-flash').addEventListener('click', () => flashSelector(sel));
+        li.querySelector('.sp-rule-del').addEventListener('click', () => {
+          const arr = currentList().filter((_, i) => i !== idx);
+          setList(arr);
+          render();
+        });
+        listEl.appendChild(li);
+      });
+    }
+
+    function addSelector(sel) {
+      sel = (sel || '').trim();
+      if (!sel) return;
+      try { document.querySelector(sel); } catch {
+        toast('❌ 无法识别该元素', 2000);
+        return;
+      }
+      const list = currentList();
+      if (list.includes(sel)) {
+        toast('该元素已在规则中', 1500);
+        return;
+      }
+      list.push(sel);
+      setList(list);
+      render();
+    }
+
+    // —— 事件绑定 ——
+    panel.querySelectorAll('.sp-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        panel.querySelectorAll('.sp-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        activeTab = tab.dataset.tab;
+        render();
+      });
+    });
+
+    panel.querySelector('.sp-btn-pick').addEventListener('click', () => {
+      panel.style.display = 'none';
+      pickElementSelector().then(sel => {
+        panel.style.display = '';
+        if (sel) addSelector(sel);
+      });
+    });
+
+    const close = (save) => {
+      document.removeEventListener('keydown', onKey, true);
+      panel.remove();
+      if (save) {
+        const merged = { ...allRules };
+        if (draft.domain.length) merged[domain] = draft.domain;
+        else delete merged[domain];
+        if (draft.global.length) merged['*'] = draft.global;
+        else delete merged['*'];
+        saveHideRules(merged).then(() => toast('✅ 规则已保存'));
+      }
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        close(false);
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    panel.querySelector('.sp-panel-close').addEventListener('click', () => close(false));
+    panel.querySelector('.sp-btn-cancel').addEventListener('click', () => close(false));
+    panel.querySelector('.sp-panel-mask').addEventListener('click', () => close(false));
+    panel.querySelector('.sp-btn-ok').addEventListener('click', () => close(true));
+
+    // 导入/导出
+    panel.querySelector('.sp-btn-export').addEventListener('click', async () => {
+      const text = JSON.stringify({ [domain]: draft.domain, '*': draft.global }, null, 2);
+      try {
+        await navigator.clipboard.writeText(text);
+        toast('✅ 已复制到剪贴板');
+      } catch {
+        toast('❌ 复制失败，请手动选择', 3000);
+      }
+    });
+    panel.querySelector('.sp-btn-import').addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        const obj = JSON.parse(text);
+        if (obj && typeof obj === 'object') {
+          if (Array.isArray(obj[domain])) draft.domain = obj[domain].filter(s => typeof s === 'string');
+          if (Array.isArray(obj['*'])) draft.global = obj['*'].filter(s => typeof s === 'string');
+          render();
+          toast('✅ 已导入');
+        } else {
+          toast('❌ 剪贴板内容格式错误', 3000);
+        }
+      } catch (err) {
+        toast('❌ 导入失败：' + err.message, 3000);
+      }
+    });
+
+    render();
+  }
+
+  // 短暂高亮匹配的元素，便于用户确认
+  function flashSelector(sel) {
+    let nodes;
+    try { nodes = document.querySelectorAll(sel); } catch { return toast('选择器无效', 1500); }
+    if (!nodes.length) return toast('没有匹配的元素', 1500);
+    const restored = [];
+    nodes.forEach(el => {
+      restored.push({ el, original: el.getAttribute('style') });
+      el.style.setProperty('outline', '3px dashed #f59e0b', 'important');
+      el.style.setProperty('outline-offset', '-3px', 'important');
+      el.style.setProperty('background-color', 'rgba(245,158,11,0.15)', 'important');
+    });
+    setTimeout(() => {
+      restored.forEach(({ el, original }) => {
+        if (original === null) el.removeAttribute('style');
+        else el.setAttribute('style', original);
+      });
+    }, 1200);
+  }
+
+  // 可视化点选元素，返回最优选择器；ESC 取消返回 null
+  function pickElementSelector() {
+    return new Promise(resolve => {
+      const tip = document.createElement('div');
+      tip.className = '__smart_print_overlay';
+      tip.setAttribute('data-html2canvas-ignore', 'true');
+      tip.style.cssText = `
+        position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+        z-index: 2147483647; background: #f59e0b; color: white;
+        padding: 8px 16px; border-radius: 6px; font-size: 13px;
+        font-family: -apple-system, sans-serif; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        pointer-events: none;
+      `;
+      tip.textContent = '👆 点击要加入隐藏规则的元素（按 ESC 取消）';
+      document.body.appendChild(tip);
+
+      let lastEl = null;
+      const onMove = (e) => {
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        if (!el || el === tip) return;
+        if (lastEl && lastEl !== el) lastEl.style.outline = '';
+        el.style.outline = '3px solid #f59e0b';
+        el.style.outlineOffset = '-3px';
+        lastEl = el;
+      };
+      const cleanup = () => {
+        document.removeEventListener('mousemove', onMove, true);
+        document.removeEventListener('click', onClick, true);
+        document.removeEventListener('keydown', onKey, true);
+        tip.remove();
+        if (lastEl) lastEl.style.outline = '';
+      };
+      const onClick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const target = lastEl;
+        cleanup();
+        resolve(target ? bestSelectorOf(target) : null);
+      };
+      const onKey = (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          cleanup();
+          resolve(null);
+        }
+      };
+      document.addEventListener('mousemove', onMove, true);
+      document.addEventListener('click', onClick, true);
+      document.addEventListener('keydown', onKey, true);
+    });
+  }
+
+  function injectRulesStyles() {
+    if (document.getElementById('__smart_print_rules_style')) return;
+    const style = document.createElement('style');
+    style.id = '__smart_print_rules_style';
+    style.textContent = `
+      .__sp-modal .sp-rules-panel { width: 520px; }
+      .__sp-modal .sp-rules-tabs {
+        display: flex; padding: 0 18px; border-bottom: 1px solid #eee; gap: 4px;
+      }
+      .__sp-modal .sp-tab {
+        background: transparent; border: none; padding: 10px 14px;
+        font-size: 13px; color: #666; cursor: pointer;
+        border-bottom: 2px solid transparent; margin-bottom: -1px;
+      }
+      .__sp-modal .sp-tab:hover { color: #2563eb; }
+      .__sp-modal .sp-tab.active {
+        color: #2563eb; border-bottom-color: #2563eb; font-weight: 600;
+      }
+      .__sp-modal .sp-rules-body { min-height: 280px; max-height: 50vh; }
+      .__sp-modal .sp-rules-toolbar {
+        display: flex; gap: 6px; margin-bottom: 8px;
+      }
+      .__sp-modal .sp-btn-pick {
+        flex: 1; padding: 10px 14px; font-size: 13px; font-weight: 600;
+        background: #fef3c7; border-color: #fbbf24; color: #92400e;
+      }
+      .__sp-modal .sp-btn-pick:hover { background: #fde68a; }
+      .__sp-modal .sp-rules-hint {
+        font-size: 11px; color: #888; margin-bottom: 10px;
+      }
+      .__sp-modal .sp-rules-list {
+        list-style: none; padding: 0; margin: 0;
+      }
+      .__sp-modal .sp-rule-item {
+        display: flex; align-items: center; gap: 8px;
+        padding: 7px 10px; margin-bottom: 4px;
+        background: #f9fafb; border: 1px solid #f1f3f5; border-radius: 6px;
+      }
+      .__sp-modal .sp-rule-sel {
+        flex: 1; font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-size: 12px; color: #1f2937;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .__sp-modal .sp-rule-count {
+        font-size: 11px; color: #16a34a;
+        background: #dcfce7; padding: 2px 6px; border-radius: 4px;
+        flex-shrink: 0;
+      }
+      .__sp-modal .sp-rule-count.zero {
+        color: #6b7280; background: #f3f4f6;
+      }
+      .__sp-modal .sp-rule-count.invalid {
+        color: #b91c1c; background: #fee2e2;
+      }
+      .__sp-modal .sp-rule-flash,
+      .__sp-modal .sp-rule-del {
+        width: 26px; height: 26px; border: none; background: transparent;
+        cursor: pointer; border-radius: 4px; font-size: 14px;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+      }
+      .__sp-modal .sp-rule-flash:hover { background: #fef3c7; }
+      .__sp-modal .sp-rule-del:hover { background: #fee2e2; color: #b91c1c; }
+      .__sp-modal .sp-rules-empty {
+        padding: 24px; text-align: center; color: #9ca3af; font-size: 13px;
+        background: #f9fafb; border-radius: 6px;
+      }
+      .__sp-modal .sp-btn-export,
+      .__sp-modal .sp-btn-import {
+        padding: 6px 10px; font-size: 12px;
+      }
+    `;
+    document.head.appendChild(style);
   }
 })();
