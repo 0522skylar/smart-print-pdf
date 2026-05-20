@@ -91,6 +91,18 @@
     #status.success { background: #d1fae5; color: #065f46; }
     #status.error { background: #fee2e2; color: #991b1b; }
     #status.info { background: #dbeafe; color: #1e40af; }
+
+    .reset-row {
+      margin-top: 8px;
+      text-align: center;
+      font-size: 11px;
+    }
+    .reset-row a {
+      color: #6b7280;
+      text-decoration: none;
+      border-bottom: 1px dashed #d1d5db;
+    }
+    .reset-row a:hover { color: #2563eb; border-color: #2563eb; }
   </style>
 </head>
 <body>
@@ -133,7 +145,11 @@
 
   <div id="status"></div>
 
-  <div class="footer">v1.0.0 · 解决 Chrome 自带打印缺失问题</div>
+  <div class="reset-row">
+    <a href="#" id="resetSkip" title="重新启用打印前设置面板">重置打印设置面板</a>
+  </div>
+
+  <div class="footer">v1.1.0 · 智能打印 PDF</div>
 
   <script src="popup.js"></script>
 </body>

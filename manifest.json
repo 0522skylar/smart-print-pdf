@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Smart Print to PDF",
-  "version": "1.0.0",
-  "description": "智能 HTML 转 PDF —— 解决 Chrome 自带打印的头部冗余、内容缺失问题。支持智能打印、阅读模式、区域选择三种模式。",
+  "version": "1.1.0",
+  "description": "智能 HTML 转 PDF —— 打印前可视化设置面板，支持纸张/方向/边距/页眉页脚，4 种打印模式。",
   "permissions": ["activeTab", "scripting", "storage"],
   "action": {
     "default_popup": "popup.html",

@@ -23,7 +23,7 @@ async function execOnPage(action) {
       return;
     }
 
-    showStatus('正在处理...', 'info', 0);
+    showStatus('正在打开设置面板...', 'info', 0);
 
     // 注入 content script
     await chrome.scripting.executeScript({
@@ -40,15 +40,19 @@ async function execOnPage(action) {
       });
     }
 
-    // 发消息给 content script 执行具体动作
-    await chrome.tabs.sendMessage(tab.id, { action });
+    // 读取用户是否设置了"跳过设置面板"
+    const { skipPanel } = await chrome.storage.sync.get('skipPanel');
+
+    // 区域选择不弹面板（交互冲突），其他 3 种模式默认弹面板
+    const showPanel = !skipPanel && action !== 'select-area';
+
+    // 发消息给 content script
+    await chrome.tabs.sendMessage(tab.id, { action, showPanel });
 
     showStatus('已发送指令', 'success', 1500);
 
-    // 智能打印场景关闭弹窗，避免遮挡打印对话框
-    if (action === 'smart-print' || action === 'reader-print') {
-      setTimeout(() => window.close(), 300);
-    }
+    // 关闭弹窗，让出焦点（面板/打印对话框需要）
+    setTimeout(() => window.close(), 200);
   } catch (err) {
     console.error(err);
     showStatus('执行失败: ' + (err.message || String(err)), 'error', 4000);
@@ -59,3 +63,13 @@ document.getElementById('smartPrint').addEventListener('click', () => execOnPage
 document.getElementById('readerPrint').addEventListener('click', () => execOnPage('reader-print'));
 document.getElementById('selectArea').addEventListener('click', () => execOnPage('select-area'));
 document.getElementById('fullPage').addEventListener('click', () => execOnPage('full-page'));
+
+document.getElementById('resetSkip').addEventListener('click', async (e) => {
+  e.preventDefault();
+  try {
+    await chrome.storage.sync.set({ skipPanel: false });
+    showStatus('已重置，下次会弹出设置面板', 'success', 2000);
+  } catch (err) {
+    showStatus('重置失败: ' + err.message, 'error', 3000);
+  }
+});
