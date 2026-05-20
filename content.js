@@ -74,16 +74,20 @@
       alert('未识别到正文区域，请尝试"智能打印"或"选择区域打印"');
       return;
     }
-
+  
     const title = document.title || 'Untitled';
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>${escapeHtml(title)}</title>
-        <style>
-          body {
+    const win = window.open('', '_blank');
+    if (!win) {
+      alert('弹窗被浏览器拦截，请允许本站弹窗后重试');
+      return;
+    }
+  
+    const doc = win.document;
+    doc.open();
+    // 只写纯 HTML+CSS，不含任何 <script>
+    doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title>
+      <style>
+      body {
             max-width: 720px;
             margin: 40px auto;
             padding: 20px;
@@ -134,36 +138,39 @@
             }
             h1, h2, h3 { page-break-after: avoid; }
           }
-        </style>
-      </head>
-      <body>
+      </style>
+      </head><body>
         <h1>${escapeHtml(title)}</h1>
         <div class="meta">来源：${escapeHtml(location.href)}<br>导出时间：${new Date().toLocaleString('zh-CN')}</div>
-        <div id="article-body">${article.innerHTML}</div>
-        <script>
-          // 移除可能残留的脚本/广告/分享按钮
-          document.querySelectorAll('script, .share, .ad, .ads, .related, [class*="share"], [class*="recommend"]').forEach(n => n.remove());
-          // 等待图片加载完成后自动打印
-          window.addEventListener('load', () => {
-            const imgs = Array.from(document.images);
-            const allLoaded = Promise.all(imgs.map(img =>
-              img.complete ? Promise.resolve() : new Promise(res => { img.onload = img.onerror = res; })
-            ));
-            allLoaded.then(() => setTimeout(() => window.print(), 300));
-          });
-        <\/script>
-      </body>
-      </html>
-    `;
-
-    const win = window.open('', '_blank');
-    if (!win) {
-      alert('弹窗被浏览器拦截，请允许本站弹窗后重试');
-      return;
+        <div id="article-body"></div>
+      </body></html>`);
+    doc.close();
+  
+    // 关键：在父页面（content script 上下文）里操作子窗口 DOM，不受子窗口 CSP 约束
+    const bodyDiv = doc.getElementById('article-body');
+    bodyDiv.innerHTML = article.innerHTML;
+  
+    // 清理广告/分享/脚本残留
+    doc.querySelectorAll('script, .share, .ad, .ads, .related, [class*="share"], [class*="recommend"]')
+       .forEach(n => n.remove());
+  
+    // 等图片加载完，再触发打印（在父页面执行，不需要内联 <script>）
+    const waitImages = () => {
+      const imgs = Array.from(doc.images);
+      return Promise.all(imgs.map(img =>
+        img.complete ? Promise.resolve() :
+          new Promise(res => { img.onload = img.onerror = res; })
+      ));
+    };
+  
+    // 子窗口 load 后再等图片
+    if (doc.readyState === 'complete') {
+      waitImages().then(() => setTimeout(() => win.print(), 300));
+    } else {
+      win.addEventListener('load', () => {
+        waitImages().then(() => setTimeout(() => win.print(), 300));
+      });
     }
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
   }
 
   function pickArticleNode() {
