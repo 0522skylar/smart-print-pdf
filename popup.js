@@ -31,6 +31,15 @@ async function execOnPage(action) {
       files: ['content.js']
     });
 
+    // 区域打印 / 整页截图需要 html2canvas + jsPDF
+    // 由扩展 API 直接注入到 ISOLATED world（与 content.js 同世界），可绕过页面 CSP
+    if (action === 'select-area' || action === 'full-page') {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['lib/html2canvas.min.js', 'lib/jspdf.umd.min.js']
+      });
+    }
+
     // 发消息给 content script 执行具体动作
     await chrome.tabs.sendMessage(tab.id, { action });
 

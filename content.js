@@ -266,8 +266,11 @@
   async function captureAndExport(el, isFullPage = false) {
     showLoading('正在生成 PDF...');
     try {
-      await ensureLib('html2canvas', 'lib/html2canvas.min.js');
-      await ensureLib('jspdf',         'lib/jspdf.umd.min.js');
+      // 库由 popup.js 通过 chrome.scripting.executeScript 预注入到 ISOLATED world
+      // 这里只做兜底校验
+      if (!window.html2canvas || !window.jspdf) {
+        throw new Error('PDF 依赖库未加载，请重新点击按钮再试一次');
+      }
 
       const html2canvas = window.html2canvas;
       const { jsPDF } = window.jspdf;
@@ -336,19 +339,6 @@
   }
 
   // ==================== 工具函数 ====================
-  function ensureLib(globalName, path) {
-    return new Promise((resolve, reject) => {
-      // jspdf 暴露的全局名是 jspdf（小写）
-      const checkName = globalName === 'jspdf' ? 'jspdf' : globalName;
-      if (window[checkName]) return resolve();
-      const s = document.createElement('script');
-      s.src = chrome.runtime.getURL(path);
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error('Failed to load ' + path));
-      document.head.appendChild(s);
-    });
-  }
-
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   let loadingEl = null;
