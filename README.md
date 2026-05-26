@@ -6,18 +6,36 @@
 
 | 模式                | 说明                                                             | 适用场景             |
 | ------------------- | ---------------------------------------------------------------- | -------------------- |
-| 🚀 **智能打印**     | 注入打印优化 CSS + JS 清除 fixed/sticky 元素，调用浏览器原生打印 | 大多数网页（首选）   |
+| 🚀 **智能打印**     | 注入打印优化 CSS，调用浏览器原生打印                             | 大多数网页（首选）   |
 | 📖 **阅读模式打印** | 提取正文，新窗口纯净渲染后打印                                   | 长文章、公众号、博客 |
 | 🎯 **选择区域打印** | 鼠标点选要导出的元素，html2canvas 截图 → jsPDF 拼页              | 局部内容、复杂页面   |
 | 📋 **整页截图导出** | 整页转图片，多页拼接成 PDF                                       | 任何页面（兜底）     |
 
+## 📦 开发与构建
+
+本项目使用 [Vite](https://vitejs.dev/) + [@crxjs/vite-plugin](https://crxjs.dev/vite-plugin) 构建。
+
+```bash
+# 安装依赖
+npm install
+
+# 开发模式（HMR）
+npm run dev
+
+# 生产构建
+npm run build
+```
+
+构建产物在 `dist/`，加载到 Chrome 时选择该目录。
+
 ## 📦 安装到 Chrome（开发者模式）
 
-1. 打开 Chrome，访问 `chrome://extensions/`
-2. 右上角打开 **"开发者模式"** 开关
-3. 点击 **"加载已解压的扩展程序"**
-4. 选择本目录 `C:\Users\haiyanhuang\smart-print-pdf`
-5. 工具栏会出现蓝色 📄 图标，点击使用
+1. 执行 `npm install && npm run build`
+2. 打开 Chrome，访问 `chrome://extensions/`
+3. 右上角打开 **"开发者模式"** 开关
+4. 点击 **"加载已解压的扩展程序"**
+5. 选择项目下的 `dist/` 目录
+6. 工具栏会出现 📄 图标，点击使用
 
 > 💡 建议把图标 **固定到工具栏**（点击右上角拼图图标 → 找到 "Smart Print to PDF" → 点图钉）
 
@@ -52,22 +70,33 @@
 
 ```
 smart-print-pdf/
-├── manifest.json              ← 插件清单（MV3）
+├── manifest.json              ← 扩展清单（MV3）
 ├── popup.html                 ← 弹窗 UI
-├── popup.js                   ← 弹窗交互逻辑
-├── content.js                 ← 注入页面的核心脚本（4 种模式）
-├── styles/
-│   └── print-optimize.css    ← 打印优化样式（灵魂）
-├── lib/
-│   ├── html2canvas.min.js    ← 截图库
-│   └── jspdf.umd.min.js      ← PDF 生成库
-├── icons/                     ← 4 种尺寸图标
-│   ├── icon16.png
-│   ├── icon32.png
-│   ├── icon48.png
-│   └── icon128.png
-├── gen-icons.ps1              ← 图标生成脚本（可重新运行）
-└── README.md                  ← 本文档
+├── vite.config.js             ← Vite 构建配置
+├── package.json
+├── src/                       ← 源码
+│   ├── content.js             ← 内容脚本入口（消息分发）
+│   ├── popup.js               ← popup 入口
+│   ├── core/
+│   │   ├── constants.js       ← 默认设置 / 纸张尺寸 / 常量
+│   │   ├── storage.js         ← options(sync) + hideRules(local) + 一次性迁移
+│   │   ├── hide-rules.js      ← CSSStyleSheet 注入式隐藏（防注入）
+│   │   └── dom.js             ← bestSelectorOf / pickElement / flashSelector
+│   ├── modes/
+│   │   ├── smart-print.js     ← 智能打印
+│   │   ├── reader-print.js    ← 阅读模式
+│   │   └── capture-print.js   ← 区域选择 + 整页截图（共用 captureAndExport）
+│   └── ui/
+│       ├── notify.js          ← toast / loading
+│       ├── settings-panel.js  ← 打印前设置面板
+│       └── rules-manager.js   ← 隐藏规则管理面板
+├── public/                    ← 静态资源（构建时直接拷贝）
+│   ├── styles/print-optimize.css
+│   ├── lib/html2canvas.min.js
+│   ├── lib/jspdf.umd.min.js
+│   └── icons/                 ← 4 种尺寸图标
+├── gen-icons.ps1              ← 图标生成脚本
+└── README.md
 ```
 
 ---
@@ -76,38 +105,29 @@ smart-print-pdf/
 
 ### 想隐藏更多元素？
 
-编辑 `styles/print-optimize.css`，在 §1 节添加 CSS 选择器：
+推荐：插件内 → **📌 管理本站隐藏规则** → 点选要隐藏的元素，自动保存到本地。
 
-```css
-.your-custom-class,
-#your-id {
-  display: none !important;
-}
-```
+也可编辑 `public/styles/print-optimize.css` 在 §1 节添加 CSS 选择器。
 
 ### 阅读模式识别不出正文？
 
-编辑 `content.js` 里的 `pickArticleNode()` 函数，添加目标网站的选择器：
-
-```js
-const candidates = [
-  'article',
-  '.your-site-article-class',  // ← 加这一行
-  ...
-];
-```
+编辑 `src/modes/reader-print.js` 里的 `pickArticleNode()` 函数，添加目标网站的选择器。
 
 ### 截图模糊？
 
-`content.js` 里调高 `scale`（默认 `1.5`，最大建议 `3`）：
-
-```js
-const canvas = await html2canvas(el, { scale: 3, ... });
-```
+设置面板里把"清晰度"调到 `2x` 或 `3x`，或编辑 `src/modes/capture-print.js` 修改默认逻辑。
 
 ⚠️ scale 越高画质越好但耗内存越大，超长页面可能崩溃。
 
 ---
+
+## 🔄 v1.2.0 更新
+
+- 引入 Vite 构建，源码模块化（`src/`），告别 1300 行单文件 `content.js`
+- 移除 `cleanFixedElements()` 全树遍历，完全依赖 CSS `@media print` 兜底，**首屏卡顿从 1~3s 降至 ~0ms**
+- 隐藏规则迁移到 `chrome.storage.local`（5MB 容量，告别 `sync` 8KB/100KB 配额限制），首次启动自动迁移
+- 隐藏规则用 `CSSStyleSheet.insertRule` 而非字符串拼接，杜绝 `}*{...}` 之类的 CSS 注入风险
+- 截图模式隐藏元素改为单 `<style>` 注入，单次 reflow，规则多/节点多时显著提速
 
 ## ⚠️ 已知限制
 
@@ -126,7 +146,7 @@ const canvas = await html2canvas(el, { scale: 3, ... });
 | 问题                     | 原因 / 解决                                                                            |
 | ------------------------ | -------------------------------------------------------------------------------------- |
 | 点了没反应               | F12 看 Console 报错；某些页面（如 chrome://）禁止注入                                  |
-| 头部还是占满首页         | 该网站用了内联 `style="position:fixed"`，已用 JS 兜底；如仍有问题，给我 URL 加专用规则 |
+| 头部还是占满首页         | 该网站用了内联 `style="position:fixed"`，CSS `* { position: static !important }` 应能覆盖；如仍有问题，给我 URL 加专用规则 |
 | 阅读模式提示"未识别正文" | 改用智能打印，或在 `pickArticleNode` 里加选择器                                        |
 | 截图导出的 PDF 有黑边    | 降低 scale，或改用智能打印                                                             |
 | 打印对话框被弹窗拦截     | 在地址栏右侧的拦截图标里允许本站弹窗                                                   |

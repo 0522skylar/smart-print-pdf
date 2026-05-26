@@ -12,10 +12,11 @@ Thumbs.db
 *.log
 npm-debug.log*
 
-# Node (以防后续引入)
+# Node
 node_modules/
 dist/
 build/
+.vite/
 
 # Env
 .env

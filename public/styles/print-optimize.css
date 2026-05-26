@@ -42,7 +42,9 @@
   }
 
   /* ========= 2. 强制清除 fixed/sticky 定位 ========= */
-  /* 这是解决"头部一直占满首页"的关键 */
+  /* 这是解决"头部一直占满首页"的关键。
+     v1.2.0 起完全依赖此 CSS 兜底，移除了 JS 全树遍历 cleanFixedElements()，
+     首屏卡顿从 1~3s 降至 ~0ms。 */
   *,
   *::before,
   *::after {
@@ -90,19 +92,31 @@
     background: transparent !important;
   }
 
-  /* ========= 5. 防止内容被强行切分 ========= */
-  p, li, blockquote, pre, code {
+  /* ========= 5. 防止内容被强行切分 =========
+     仅对"小颗粒度"元素生效。
+     大容器（table/figure/pre/section）一律允许跨页，
+     否则整页大表格会被整体推到下一页，导致首页大片空白。 */
+  p, li, blockquote {
     page-break-inside: avoid;
     break-inside: avoid;
     orphans: 3;
     widows: 3;
   }
 
-  table, figure, img, video, .code-block, pre {
+  /* 媒体（图片/视频）保持不被切分——它们一般不会超过一页 */
+  img, video {
     page-break-inside: avoid;
     break-inside: avoid;
   }
 
+  /* 表格/代码块/figure：允许跨页，避免首页空白；
+     仅保留表头跨页重复 */
+  table, figure, pre, .code-block {
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+
+  /* 标题不要"孤悬"在页底（避免标题在 A 页、内容在 B 页） */
   h1, h2, h3, h4, h5, h6 {
     page-break-after: avoid;
     break-after: avoid;

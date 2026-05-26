@@ -16,8 +16,6 @@ async function execOnPage(action) {
       showStatus('未找到活动标签页', 'error');
       return;
     }
-
-    // chrome:// / edge:// / 应用商店等受限页面不能注入
     if (/^(chrome|edge|about|chrome-extension):\/\//.test(tab.url || '')) {
       showStatus('该页面不支持注入脚本', 'error', 3000);
       return;
@@ -25,33 +23,22 @@ async function execOnPage(action) {
 
     showStatus(action === 'manage-rules' ? '正在打开规则管理...' : '正在打开设置面板...', 'info', 0);
 
-    // 注入 content script
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['content.js']
-    });
-
-    // 区域打印 / 整页截图需要 html2canvas + jsPDF
-    // 由扩展 API 直接注入到 ISOLATED world（与 content.js 同世界），可绕过页面 CSP
+    // 区域打印 / 整页截图需要 html2canvas + jsPDF（先于 content 注入，
+    // 这样 content 第一次跑就能用到 window.html2canvas / window.jspdf）
     if (action === 'select-area' || action === 'full-page') {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        files: ['lib/html2canvas.min.js', 'lib/jspdf.umd.min.js']
+        files: ['lib/html2canvas.min.js', 'lib/jspdf.umd.min.js'],
       });
     }
 
-    // 读取用户是否设置了"跳过设置面板"
+    // content script 已通过 manifest content_scripts 自动注入；仍主动 sendMessage
     const { skipPanel } = await chrome.storage.sync.get('skipPanel');
-
-    // 区域选择不弹面板（交互冲突），管理规则不需要打印设置面板
     const showPanel = !skipPanel && action !== 'select-area' && action !== 'manage-rules';
 
-    // 发消息给 content script
     await chrome.tabs.sendMessage(tab.id, { action, showPanel });
 
     showStatus('已发送指令', 'success', 1500);
-
-    // 关闭弹窗，让出焦点（面板/打印对话框需要）
     setTimeout(() => window.close(), 200);
   } catch (err) {
     console.error(err);
