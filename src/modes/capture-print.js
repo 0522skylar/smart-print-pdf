@@ -21,17 +21,20 @@ export async function fullPagePrint(options) {
 }
 
 async function captureAndExport(el, isFullPage, options) {
-  showLoading('正在生成 PDF...');
+  const isPng = options.outputFormat === 'png';
+  showLoading(isPng ? '正在生成 PNG...' : '正在生成 PDF...');
   await waitForPaint();
   let cleanupHideRules = () => {};
   let lightStyle = null;
 
   try {
-    if (!window.html2canvas || !window.jspdf) {
+    if (!window.html2canvas) {
+      throw new Error('截图依赖库未加载，请重新点击按钮再试一次');
+    }
+    if (!isPng && !window.jspdf) {
       throw new Error('PDF 依赖库未加载，请重新点击按钮再试一次');
     }
     const html2canvas = window.html2canvas;
-    const { jsPDF } = window.jspdf;
 
     // 用 CSSStyleSheet 注入式隐藏，单次 reflow（性能远优于逐元素 inline style）
     const hideSelectors = await getEffectiveSelectors();
@@ -58,11 +61,33 @@ async function captureAndExport(el, isFullPage, options) {
       logging: false,
       windowWidth: isFullPage ? document.documentElement.scrollWidth : undefined,
       windowHeight: isFullPage ? document.documentElement.scrollHeight : undefined,
+      // 在克隆好的 DOM 上做最后清理，避免触发扩展 CSP 拦截外链脚本
+      onclone: (clonedDoc) => {
+        // 1. 删掉所有 script / link[rel=preload as=script] / noscript
+        //    它们对截图毫无视觉贡献，但克隆后浏览器会重新发起加载
+        clonedDoc.querySelectorAll(
+          'script, noscript, link[rel="preload"][as="script"], link[rel="modulepreload"], link[rel="prefetch"]'
+        ).forEach(n => n.remove());
+        // 2. 移除明确标记不参与截图的节点（包括我们自己的设置面板）
+        clonedDoc.querySelectorAll('[data-html2canvas-ignore]').forEach(n => n.remove());
+      },
     });
 
     lightStyle?.remove();
     lightStyle = null;
 
+    const baseName = (document.title || 'page')
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .slice(0, FILENAME_MAX_LEN);
+
+    if (isPng) {
+      await exportPng(canvas, baseName + '.png');
+      hideLoading();
+      toast('✅ PNG 已生成');
+      return;
+    }
+
+    const { jsPDF } = window.jspdf;
     const [paperW, paperH] = PAPER_SIZES[options.paperSize] || PAPER_SIZES.a4;
     const orientation = options.orientation === 'landscape' ? 'l' : 'p';
     const pageW = orientation === 'l' ? paperH : paperW;
@@ -112,10 +137,7 @@ async function captureAndExport(el, isFullPage, options) {
       }
     }
 
-    const filename = (document.title || 'page')
-      .replace(/[\\/:*?"<>|]/g, '_')
-      .slice(0, FILENAME_MAX_LEN) + '.pdf';
-    pdf.save(filename);
+    pdf.save(baseName + '.pdf');
     hideLoading();
     toast('✅ PDF 已生成');
   } catch (err) {
@@ -126,6 +148,28 @@ async function captureAndExport(el, isFullPage, options) {
     cleanupHideRules();
     lightStyle?.remove();
   }
+}
+
+function exportPng(canvas, filename) {
+  return new Promise((resolve, reject) => {
+    try {
+      canvas.toBlob(blob => {
+        if (!blob) return reject(new Error('Canvas toBlob 返回空'));
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        // 释放（稍延迟避免 Chrome 取消下载）
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        resolve();
+      }, 'image/png');
+    } catch (e) {
+      reject(e);
+    }
+  });
 }
 
 function drawHeaderFooter(pdf, options, pageNum, totalPages, pageW, pageH, margin) {

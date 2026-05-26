@@ -1,5 +1,4 @@
 // 设置面板（打印前弹窗）
-import { PAPER_SIZES } from '../core/constants.js';
 
 function segOptions(items, current) {
   return items.map(([val, label]) => {
@@ -98,6 +97,17 @@ export function injectPanelStyles() {
     .__sp-modal .sp-btn-ok:hover {
       background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
     }
+    .__sp-modal .sp-tip {
+      margin: -4px 0 14px;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: #92400e;
+      background: #fef3c7;
+      border: 1px solid #fde68a;
+      border-radius: 6px;
+      line-height: 1.5;
+    }
+    .__sp-modal .sp-tip b { color: #78350f; }
   `;
   document.head.appendChild(style);
 }
@@ -127,7 +137,23 @@ export function openSettingsPanel(action, opts, onOpenRules) {
         </div>
         <div class="sp-panel-body">
 
+          ${isCanvasMode ? `
+          <div class="sp-tip" id="sp-canvas-tip">
+            <b>提示：</b>此模式输出 <b>位图</b>，PDF 中的文字 <b>不可选中 / 不可搜索</b>。
+            如需文本层 PDF，请改用 <b>智能打印</b>。
+          </div>
+
           <div class="sp-row">
+            <label>输出格式</label>
+            <div class="sp-seg" data-key="outputFormat">
+              ${segOptions([
+                ['pdf', 'PDF'], ['png', 'PNG 图片']
+              ], opts.outputFormat || 'pdf')}
+            </div>
+          </div>
+          ` : ''}
+
+          <div class="sp-row" data-pdf-only>
             <label>纸张</label>
             <div class="sp-seg" data-key="paperSize">
               ${segOptions([
@@ -136,7 +162,7 @@ export function openSettingsPanel(action, opts, onOpenRules) {
             </div>
           </div>
 
-          <div class="sp-row">
+          <div class="sp-row" data-pdf-only>
             <label>方向</label>
             <div class="sp-seg" data-key="orientation">
               ${segOptions([
@@ -145,7 +171,7 @@ export function openSettingsPanel(action, opts, onOpenRules) {
             </div>
           </div>
 
-          <div class="sp-row">
+          <div class="sp-row" data-pdf-only>
             <label>边距</label>
             <div class="sp-seg" data-key="margin">
               ${segOptions([
@@ -165,7 +191,7 @@ export function openSettingsPanel(action, opts, onOpenRules) {
           </div>
           ` : ''}
 
-          <div class="sp-row sp-row-checks">
+          <div class="sp-row sp-row-checks" data-pdf-only>
             <label>页眉页脚</label>
             <div class="sp-checks">
               <label class="sp-check"><input type="checkbox" data-key="headerTitle" ${opts.headerTitle ? 'checked' : ''}> 标题</label>
@@ -200,6 +226,20 @@ export function openSettingsPanel(action, opts, onOpenRules) {
 
     const result = { ...opts };
 
+    // PDF/PNG 模式联动：PNG 模式下隐藏纸张/方向/边距/页眉页脚
+    const tipEl = panel.querySelector('#sp-canvas-tip');
+    const pdfOnlyRows = panel.querySelectorAll('[data-pdf-only]');
+    const applyFormatVisibility = (fmt) => {
+      const isPng = fmt === 'png';
+      pdfOnlyRows.forEach(row => { row.style.display = isPng ? 'none' : ''; });
+      if (tipEl) {
+        tipEl.innerHTML = isPng
+          ? '<b>提示：</b>将导出为 <b>PNG 图片</b>（单张大图，不分页、无页眉页脚）。'
+          : '<b>提示：</b>此模式输出 <b>位图</b>，PDF 中的文字 <b>不可选中 / 不可搜索</b>。如需文本层 PDF，请改用 <b>智能打印</b>。';
+      }
+    };
+    if (isCanvasMode) applyFormatVisibility(result.outputFormat || 'pdf');
+
     panel.querySelectorAll('.sp-seg').forEach(seg => {
       const key = seg.dataset.key;
       seg.addEventListener('click', e => {
@@ -213,6 +253,7 @@ export function openSettingsPanel(action, opts, onOpenRules) {
           if (!Number.isNaN(n)) val = n;
         }
         result[key] = val;
+        if (key === 'outputFormat') applyFormatVisibility(val);
       });
     });
 

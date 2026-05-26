@@ -11,6 +11,7 @@ export const DEFAULT_OPTIONS = {
   showLinkUrl: false,
   forceLight: true,
   skipPanel: false,
+  outputFormat: 'pdf',      // pdf | png（仅 select-area / full-page 模式生效）
 };
 
 export const PAPER_SIZES = {
